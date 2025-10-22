@@ -1,0 +1,9 @@
+{
+    "dwbj": {
+        "host": "AOOSTARGEM12",
+        "port": 55432,
+        "database": "dwbj",
+        "user": "postgres",
+        "password": "pgadmin"
+    }
+}

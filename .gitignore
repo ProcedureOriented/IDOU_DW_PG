@@ -1,1 +1,12 @@
-/dumped
+# 忽略mac系统文件
+.DS_Store
+DS_Store
+*/.DS_Store
+*.pyc
+
+# 忽略数据和输出文件夹
+data/
+output/
+log/
+__pycache__/
+dumped/
