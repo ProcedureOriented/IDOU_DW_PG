@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from sqlalchemy import create_engine, text
+from create_table import get_field_comment
 from get_conn import get_conn   # 调用此包会使运行目录变为utils上一级
 pd.set_option('future.no_silent_downcasting', True)
 # %% 连接数据库
@@ -17,7 +18,13 @@ r_check_cross_name = 'r_check_cross'
 r_check_cross_cols = ['code', 'accounting_equation', 'condition', 'level', 'tips']
 r_check_important_subject_name = 'r_check_important_subject'
 r_check_important_subject_cols = ['code', 'subject_code', 'condition', 'level', 'tips']
-
+table_info_name = 'r_dict_table_info'
+table_info_cols = ['table_code', 'table_name']
+field_info_name = 'r_dict_field_info'
+field_info_cols = ['table_code', 'field_order', 'field_code', 'field_name', 'data_type_para', 
+    'default_value', 'is_not_null', 'enable_status', 'sync_field_code', 'history_code', 'remarks']
+table_info = pd.read_sql(text(f"SELECT {','.join(table_info_cols)} FROM {table_info_name} WHERE table_code != '-'"), engine).fillna(np.nan)
+field_info = pd.read_sql(text(f"SELECT {','.join(field_info_cols)} FROM {field_info_name}"), engine).fillna(np.nan)
 subject_dict = pd.read_sql(text(f"SELECT {','.join(subject_dict_cols)} FROM {subject_dict_name} "), engine).fillna(np.nan)
 r_check_cross = pd.read_sql(text(f"SELECT {','.join(r_check_cross_cols)} FROM {r_check_cross_name}"), engine).fillna(np.nan)
 r_check_important_subject = pd.read_sql(text(f"SELECT {','.join(r_check_important_subject_cols)} FROM {r_check_important_subject_name}"), engine).fillna(np.nan).fillna(np.nan)
@@ -77,43 +84,47 @@ def process_check_conditions(r_check_cross: pd.DataFrame, r_check_important_subj
         ] = formulao
     return r_check_cross,r_check_important_subject
     
-def generate_check_view_sql(r_check_cross:pd.DataFrame, r_check_important_subject:pd.DataFrame,subject_dict:pd.DataFrame):
+
+
+def generate_check_view_sql(r_check_cross:pd.DataFrame, r_check_important_subject:pd.DataFrame,subject_dict:pd.DataFrame,table_code: str, schema: str = 'public'):
     """
     生成创建检查视图的SQL语句，包括视图定义和字段注释
 
     """
+    field_info_rows: pd.DataFrame = field_info.query("table_code == @table_code").sort_values(by='field_order')
+    
     r_check_cross, r_check_important_subject = process_check_conditions(
         r_check_cross=r_check_cross,
         r_check_important_subject=r_check_important_subject,
         subject_dict=subject_dict
     )
-    sa = []
+    sa=[]
     for _, row_conf in r_check_cross.iterrows():
         code = row_conf['code']
         formula = row_conf['condition1']
-        ss = f"COALESCE({formula}, false) AS {code}"
+        level=row_conf['level']
+        ss=f"""case  
+        when {formula} THEN 0
+        ELSE {level}
+        END AS {code}"""
+        sa.append(ss)
+    for _, row_conf in r_check_important_subject.iterrows():
+        code = row_conf['code']
+        formula = row_conf['condition1']
+        level=row_conf['level']
+        ss=f"""case  
+        when {formula} THEN 0
+        ELSE {level}
+        END AS {code}"""
         sa.append(ss)
 
-    for _, row_conf in r_check_important_subject.iterrows():
-        code = row_conf['code']
-        formula = row_conf['condition1']
-        ss = f"COALESCE({formula}, false) AS {code}"
-        sa.append(ss)
-    
     # 生成字段注释语句
-    com = []
-    for _, row_conf in r_check_cross.iterrows():
-        code = row_conf['code']
-        comment = row_conf['accounting_equation']
-        cc = f"COMMENT ON COLUMN public.c_check.{code} IS '{comment}';"
-        com.append(cc)
-    
-    for _, row_conf in r_check_important_subject.iterrows():
-        code = row_conf['code']
-        comment = row_conf['tips']
-        cc=f"COMMENT ON COLUMN public.c_check.{code} IS '{comment}';"
-        com.append(cc)
-    
+    field_comment_stmts = []
+    for _, field_row in field_info_rows.iterrows():
+        field_comment_stmt = get_field_comment(field_row, schema=schema)
+        field_comment_stmts.append(field_comment_stmt)
+    field_comment_stmts = '\n'.join(field_comment_stmts)
+
     # 拼接完整SQL语句
     sql = f"""
 CREATE OR REPLACE VIEW public.c_check
@@ -126,11 +137,11 @@ brf.tquarter AS tquarter,
 FROM public.b_rpt_finance AS brf
 FULL JOIN public.b_rpt_finance_notes AS brfn 
 ON brf.crmcode = brfn.crmcode AND brf.tyear = brfn.tyear AND brf.tquarter = brfn.tquarter;
-{' \n'.join(com)}
+{(field_comment_stmts)}
     """
     
     return sql
 # %% 测试(自举)
 if __name__ == "__main__":
-    print(generate_check_view_sql(r_check_cross,r_check_important_subject,subject_dict), end='\n\n')
+    print(generate_check_view_sql(r_check_cross,r_check_important_subject,subject_dict,'c_check'), end='\n\n')
 # %%
