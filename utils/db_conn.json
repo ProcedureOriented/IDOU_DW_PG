@@ -5,5 +5,13 @@
         "database": "dwbj",
         "user": "postgres",
         "password": "pgadmin"
+    },
+
+    "mysql_test": {
+        "host": "localhost",
+        "port": 3306,
+        "database": "test",
+        "user": "root",
+        "password": "root"
     }
 }

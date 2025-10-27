@@ -42,7 +42,7 @@ def get_field_def(field_info_row: pd.Series, space_indent: int = 4) -> str:
     return field_def
 
 def get_constraint_def(constraint_rows: pd.DataFrame, schema: str = 'public', space_indent: int = 4) -> str:
-    """拼接约束定义语句，外键的配置有两行，其他约束一行"""
+    """拼接约束定义语句，外键的配置有两行，其他约束一行，INDEX不再支持"""
     if constraint_rows.shape[0] == 1:
         const_row = constraint_rows.iloc[0,:]
         const_refrow = pd.Series()
@@ -67,8 +67,8 @@ def get_constraint_def(constraint_rows: pd.DataFrame, schema: str = 'public', sp
             const_def = f"{indentation}CONSTRAINT {const_name} PRIMARY KEY ({const_cols})"
         case 'uq':
             const_def = f"{indentation}CONSTRAINT {const_name} UNIQUE ({const_cols})"
-        case 'idx':
-            const_def = f"{indentation}CONSTRAINT {const_name} INDEX ({const_cols})"
+        # case 'idx':
+        #     const_def = f"{indentation}CONSTRAINT {const_name} INDEX ({const_cols})"
         case 'fk':
             ref_table_code = const_refrow['fk_ref_to']
             ref_table_cols: list = const_refrow.filter(like='pos').dropna().tolist()
@@ -80,6 +80,15 @@ def get_constraint_def(constraint_rows: pd.DataFrame, schema: str = 'public', sp
             raise ValueError(f"{owner_table_code}: Unsupported constraint type: {const_type}")
 
     return const_def
+
+def get_index_def(index_info_row: pd.Series, schema: str = 'public') -> str:
+    """拼接索引定义语句"""
+    table_code = index_info_row['owner_table']
+    index_name = index_info_row['constraint_name']
+    index_cols = index_info_row.filter(like='pos').dropna().tolist()
+    index_cols_str = ', '.join(index_cols)
+    index_def = f"CREATE INDEX {index_name} ON {schema}.{table_code} USING btree ({index_cols_str});"
+    return index_def
 
 def get_field_comment(field_info_row: pd.Series, schema: str = 'public') -> str:
     table_code = field_info_row['table_code']
@@ -114,7 +123,8 @@ def create_table_sql(table_code: str, schema: str = 'public') -> str:
     # 取出表信息
     table_info_row: pd.Series = table_info.query("table_code == @table_code").iloc[0,:]
     field_info_rows: pd.DataFrame = field_info.query("table_code == @table_code").sort_values(by='field_order')
-    constraint_rows: pd.DataFrame = table_constraints.query("owner_table == @table_code").sort_values(by=['constraint_name', 'fk_ref_to'])
+    constraint_rows: pd.DataFrame = table_constraints.query("owner_table == @table_code and constraint_type.str.lower().isin(['pk','fk','uq'])").sort_values(by=['constraint_name', 'fk_ref_to'])
+    index_rows: pd.DataFrame = table_constraints.query("owner_table == @table_code and constraint_type.str.lower().isin(['idx'])").sort_values(by=['constraint_name'])
 
     # 拼接字段定义语句
     field_defs = []
@@ -130,9 +140,17 @@ def create_table_sql(table_code: str, schema: str = 'public') -> str:
             constraint_def = get_constraint_def(const_group, schema=schema, space_indent=4)
             constraint_defs.append(constraint_def)
     
+    # 拼接索引定义语句
+    index_defs = []
+    if not index_rows.empty:
+        for _, index_row in index_rows.iterrows():
+            index_def = get_index_def(index_row, schema=schema)
+            index_defs.append(index_def)
+
     # 组合建表语句
-    all_defs_str = ',\n'.join(field_defs + constraint_defs)
-    create_table_stmt = f"CREATE TABLE IF NOT EXISTS {schema}.{table_code} (\n{all_defs_str}\n);\n"
+    all_inside_defs_str = ',\n'.join(field_defs + constraint_defs)
+    idx_outside_defs_str = ('\n'.join(index_defs) + '\n') if index_defs else ''
+    create_table_stmt = f"CREATE TABLE IF NOT EXISTS {schema}.{table_code} (\n{all_inside_defs_str}\n);\n" + idx_outside_defs_str
 
     # 拼接注释语句
     table_comment_stmt = get_table_comment(table_info_row, schema=schema)
