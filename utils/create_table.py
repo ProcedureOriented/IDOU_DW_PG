@@ -94,9 +94,9 @@ def get_field_comment(field_info_row: pd.Series, schema: str = 'public') -> str:
     table_code = field_info_row['table_code']
     field_code = field_info_row['field_code']
     field_name = field_info_row['field_name'] if pd.notna(field_info_row['field_name']) else ''
-    history_code1 = ', ' + field_info_row['sync_field_code'] if pd.notna(field_info_row['sync_field_code']) else ''
-    history_code2 = ', ' + field_info_row['history_code'] if pd.notna(field_info_row['history_code']) else ''
-    extra_remarks = ': ' + field_info_row['remarks'] if pd.notna(field_info_row['remarks']) else ''
+    history_code1 = (', ' + field_info_row['sync_field_code']) if pd.notna(field_info_row['sync_field_code']) else ''
+    history_code2 = (', ' + field_info_row['history_code']) if pd.notna(field_info_row['history_code']) else ''
+    extra_remarks = (': ' + field_info_row['remarks']) if pd.notna(field_info_row['remarks']) else ''
 
     comment_def = f"COMMENT ON COLUMN {schema}.{table_code}.{field_code} IS '{field_name}{history_code1}{history_code2}{extra_remarks}';"
     return comment_def
